@@ -56,10 +56,24 @@ def load_from_networkx(graph):
 
     nodes_list = list(graph.nodes)
     features_mat = np.zeros(shape=(len(nodes_list), max(nodes_list)+1))
+
+    name2id = {}
     for idx in range(len(nodes_list)):
         features_mat[idx][nodes_list[idx]] = 1
-    return coo_matrix(adj_mat), coo_matrix(features_mat)
+        name2id[nodes_list[idx]] = idx
+    return coo_matrix(adj_mat), coo_matrix(features_mat), name2id
 
 if __name__ == '__main__':
-    load_data('citeseer')
+    with open('./edges.txt', 'r') as f:
+        edges = f.readlines()
+        for line in edges:
+            line = line.strip()
+        # print(len(edges))
+
+    edge_tuple_list = []
+    for line in edges:
+        source, sink = line.split(" ")
+        edge_tuple_list.append((int(source), int(sink)))
+    G = nx.Graph()
+    G.add_edges_from(edge_tuple_list)
 

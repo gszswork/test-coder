@@ -29,8 +29,8 @@ G.add_edges_from(edge_tuple_list)
 # Train on CPU (hide GPU) due to memory constraints
 os.environ['CUDA_VISIBLE_DEVICES'] = ""
 
-#adj, features = load_data(args.dataset)
-adj, features = load_from_networkx(G)
+# adj, features = load_data(args.dataset)
+adj, features, name2id = load_from_networkx(G)
 
 # Store original adjacency matrix (without diagonal entries) for later
 adj_orig = adj
@@ -43,7 +43,6 @@ adj = adj_train
 # Some preprocessing
 adj_norm = preprocess_graph(adj)
 
-
 num_nodes = adj.shape[0]
 
 features = sparse_to_tuple(features.tocoo())
@@ -54,33 +53,29 @@ features_nonzero = features[1].shape[0]
 pos_weight = float(adj.shape[0] * adj.shape[0] - adj.sum()) / adj.sum()
 norm = adj.shape[0] * adj.shape[0] / float((adj.shape[0] * adj.shape[0] - adj.sum()) * 2)
 
-
 adj_label = adj_train + sp.eye(adj_train.shape[0])
 adj_label = sparse_to_tuple(adj_label)
 
-
-
-adj_norm = torch.sparse.FloatTensor(torch.LongTensor(adj_norm[0].T), 
-                            torch.FloatTensor(adj_norm[1]), 
-                            torch.Size(adj_norm[2]))
-adj_label = torch.sparse.FloatTensor(torch.LongTensor(adj_label[0].T), 
-                            torch.FloatTensor(adj_label[1]), 
-                            torch.Size(adj_label[2]))
-features = torch.sparse.FloatTensor(torch.LongTensor(features[0].T), 
-                            torch.FloatTensor(features[1]), 
-                            torch.Size(features[2]))
+adj_norm = torch.sparse.FloatTensor(torch.LongTensor(adj_norm[0].T),
+                                    torch.FloatTensor(adj_norm[1]),
+                                    torch.Size(adj_norm[2]))
+adj_label = torch.sparse.FloatTensor(torch.LongTensor(adj_label[0].T),
+                                     torch.FloatTensor(adj_label[1]),
+                                     torch.Size(adj_label[2]))
+features = torch.sparse.FloatTensor(torch.LongTensor(features[0].T),
+                                    torch.FloatTensor(features[1]),
+                                    torch.Size(features[2]))
 
 weight_mask = adj_label.to_dense().view(-1) == 1
-weight_tensor = torch.ones(weight_mask.size(0)) 
+weight_tensor = torch.ones(weight_mask.size(0))
 weight_tensor[weight_mask] = pos_weight
 
 # init model and optimizer
-model = getattr(model,args.model)(adj_norm)
+model = getattr(model, args.model)(adj_norm)
 optimizer = Adam(model.parameters(), lr=args.learning_rate)
 
 
 def get_scores(edges_pos, edges_neg, adj_rec):
-
     def sigmoid(x):
         return 1 / (1 + np.exp(-x))
 
@@ -96,7 +91,6 @@ def get_scores(edges_pos, edges_neg, adj_rec):
     preds_neg = []
     neg = []
     for e in edges_neg:
-
         preds_neg.append(sigmoid(adj_rec[e[0], e[1]].data))
         neg.append(adj_orig[e[0], e[1]])
 
@@ -107,27 +101,32 @@ def get_scores(edges_pos, edges_neg, adj_rec):
 
     return roc_score, ap_score
 
+
 def get_acc(adj_rec, adj_label):
     labels_all = adj_label.to_dense().view(-1).long()
     preds_all = (adj_rec > 0.5).view(-1).long()
     accuracy = (preds_all == labels_all).sum().float() / labels_all.size(0)
     return accuracy
 
+
 # train model
+final_A = None
+max_loss = 99999
 for epoch in range(args.num_epoch):
     t = time.time()
-    print(features.shape)
     A_pred = model(features)
     optimizer.zero_grad()
-    loss = log_lik = norm*F.binary_cross_entropy(A_pred.view(-1), adj_label.to_dense().view(-1), weight = weight_tensor)
+    loss = log_lik = norm * F.binary_cross_entropy(A_pred.view(-1), adj_label.to_dense().view(-1), weight=weight_tensor)
+    final_A = A_pred
     if args.model == 'VGAE':
-        kl_divergence = 0.5/ A_pred.size(0) * (1 + 2*model.logstd - model.mean**2 - torch.exp(model.logstd)**2).sum(1).mean()
+        kl_divergence = 0.5 / A_pred.size(0) * (
+                1 + 2 * model.logstd - model.mean ** 2 - torch.exp(model.logstd) ** 2).sum(1).mean()
         loss -= kl_divergence
 
     loss.backward()
     optimizer.step()
 
-    train_acc = get_acc(A_pred,adj_label)
+    train_acc = get_acc(A_pred, adj_label)
 
     val_roc, val_ap = get_scores(val_edges, val_edges_false, A_pred)
     print("Epoch:", '%04d' % (epoch + 1), "train_loss=", "{:.5f}".format(loss.item()),
@@ -135,7 +134,45 @@ for epoch in range(args.num_epoch):
           "val_ap=", "{:.5f}".format(val_ap),
           "time=", "{:.5f}".format(time.time() - t))
 
-
 test_roc, test_ap = get_scores(test_edges, test_edges_false, A_pred)
 print("End of training!", "test_roc=", "{:.5f}".format(test_roc),
       "test_ap=", "{:.5f}".format(test_ap))
+'''
+import pickle
+dirname = './'
+def save_obj(obj, name ):
+    with open(dirname+ name + '.pkl', 'wb') as f:
+        pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
+'''
+# save_obj(final_A, 'params')
+# save_obj(name2id, 'name2id')
+import time
+
+localtime = time.asctime(time.localtime(time.time()))
+
+
+res = []
+with open('./test-public.csv', 'r') as f:
+    next(f)
+    for line in f:
+        _, h, t = line.split(',')
+        h = int(h)
+        t = int(t)
+
+        res.append(A_pred[name2id[h]][name2id[t]].detach().numpy())
+
+import math
+
+
+def sigmoid(x):
+    return 1 / (1 + math.exp(-x))
+
+for elem in res:
+    elem = sigmoid(elem)
+
+out = 'your_name.csv'
+with open(out, 'w') as o:
+    o.write('Id,Predicted\n')
+    for i, s in enumerate(res):
+        o.write(f'{i + 1},{s}\n')
+print('Write output to', out)
