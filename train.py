@@ -13,24 +13,12 @@ import args
 import model
 import networkx as nx
 
-with open('./edges.txt', 'r') as f:
-    edges = f.readlines()
-    for line in edges:
-        line = line.strip()
-    # print(len(edges))
-
-edge_tuple_list = []
-for line in edges:
-    source, sink = line.split(" ")
-    edge_tuple_list.append((int(source), int(sink)))
-G = nx.Graph()
-G.add_edges_from(edge_tuple_list)
 
 # Train on CPU (hide GPU) due to memory constraints
 os.environ['CUDA_VISIBLE_DEVICES'] = ""
 
 # adj, features = load_data(args.dataset)
-adj, features, name2id = load_from_networkx(G)
+adj, features, name2id = load_from_networkx('./edges.txt', aug=True)
 
 # Store original adjacency matrix (without diagonal entries) for later
 adj_orig = adj
@@ -111,13 +99,13 @@ def get_acc(adj_rec, adj_label):
 
 # train model
 final_A = None
-max_loss = 99999
+min_roc = -1
 for epoch in range(args.num_epoch):
     t = time.time()
     A_pred = model(features)
     optimizer.zero_grad()
     loss = log_lik = norm * F.binary_cross_entropy(A_pred.view(-1), adj_label.to_dense().view(-1), weight=weight_tensor)
-    final_A = A_pred
+
     if args.model == 'VGAE':
         kl_divergence = 0.5 / A_pred.size(0) * (
                 1 + 2 * model.logstd - model.mean ** 2 - torch.exp(model.logstd) ** 2).sum(1).mean()
@@ -129,6 +117,8 @@ for epoch in range(args.num_epoch):
     train_acc = get_acc(A_pred, adj_label)
 
     val_roc, val_ap = get_scores(val_edges, val_edges_false, A_pred)
+    if val_roc > min_roc:
+        final_A = A_pred
     print("Epoch:", '%04d' % (epoch + 1), "train_loss=", "{:.5f}".format(loss.item()),
           "train_acc=", "{:.5f}".format(train_acc), "val_roc=", "{:.5f}".format(val_roc),
           "val_ap=", "{:.5f}".format(val_ap),
@@ -137,15 +127,18 @@ for epoch in range(args.num_epoch):
 test_roc, test_ap = get_scores(test_edges, test_edges_false, A_pred)
 print("End of training!", "test_roc=", "{:.5f}".format(test_roc),
       "test_ap=", "{:.5f}".format(test_ap))
-'''
+
+
 import pickle
 dirname = './'
+
 def save_obj(obj, name ):
     with open(dirname+ name + '.pkl', 'wb') as f:
         pickle.dump(obj, f, pickle.HIGHEST_PROTOCOL)
-'''
-# save_obj(final_A, 'params')
-# save_obj(name2id, 'name2id')
+
+
+save_obj(final_A, 'params_1024_512_500iter')
+save_obj(name2id, 'name2id')
 import time
 
 localtime = time.asctime(time.localtime(time.time()))
@@ -160,12 +153,14 @@ with open('./test-public.csv', 'r') as f:
         t = int(t)
 
         res.append(A_pred[name2id[h]][name2id[t]].detach().numpy())
-
+        #print(A_pred[name2id[h]][name2id[t]].detach().numpy())
+        #print(A_pred[name2id[t]][name2id[h]].detach().numpy())
 import math
 
 
 def sigmoid(x):
     return 1 / (1 + math.exp(-x))
+
 
 for elem in res:
     elem = sigmoid(elem)

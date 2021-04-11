@@ -1,11 +1,11 @@
 ### CONFIGS ###
 dataset = 'cora'
-model = 'GAE'
+model = 'VGAE'
 
-input_dim = 4093
-hidden1_dim = 64
-hidden2_dim = 32
+input_dim = 3816
+hidden1_dim = 32
+hidden2_dim = 16
 use_feature = False
 
-num_epoch = 500
+num_epoch = 200
 learning_rate = 0.01

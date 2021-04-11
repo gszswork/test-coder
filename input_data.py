@@ -50,7 +50,7 @@ def load_data(dataset):
 
     return adj, features
 
-def load_from_networkx(graph):
+def load_from_networkx1(graph):
     #graph = pkl.load(graph)
     adj_mat = nx.adjacency_matrix(graph)
 
@@ -63,17 +63,40 @@ def load_from_networkx(graph):
         name2id[nodes_list[idx]] = idx
     return coo_matrix(adj_mat), coo_matrix(features_mat), name2id
 
-if __name__ == '__main__':
-    with open('./edges.txt', 'r') as f:
+
+def load_from_networkx(edges_path, aug=False):
+    with open(edges_path, 'r') as f:
         edges = f.readlines()
-        for line in edges:
-            line = line.strip()
-        # print(len(edges))
 
     edge_tuple_list = []
     for line in edges:
+        line = line.strip()
         source, sink = line.split(" ")
         edge_tuple_list.append((int(source), int(sink)))
     G = nx.Graph()
     G.add_edges_from(edge_tuple_list)
 
+    adj_mat = nx.adjacency_matrix(G)
+    nodes_list = list(G.nodes)
+    features = sp.identity(adj_mat.shape[0])
+
+    # generate name2id dict
+    name2id = {}
+    for idx in range(len(nodes_list)):
+        name2id[nodes_list[idx]] = idx
+
+    if aug:
+        adj_mat = adj_mat.toarray()
+        for line in edges:
+            line = line.strip()
+            source, sink = line.split(" ")
+            adj_mat[name2id[int(source)]][name2id[int(sink)]] += 1
+        adj_mat = coo_matrix(adj_mat)
+    return adj_mat, features, name2id
+
+
+if __name__ == '__main__':
+    path = './edges.txt'
+    adj, feature, name2id = load_from_networkx(path, aug=True)
+    print(type(adj))
+    print(adj)
